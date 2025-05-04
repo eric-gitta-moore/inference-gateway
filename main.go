@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"mime/multipart"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -12,7 +13,7 @@ type ModelTask string
 
 const (
 	FacialRecognition ModelTask = "facial-recognition"
-	Search            ModelTask = "search"
+	Search            ModelTask = "clip"
 )
 
 type ModelType string
@@ -33,31 +34,23 @@ type PipelineEntry struct {
 // PipelineRequest 结构体
 type PipelineRequest map[ModelTask]map[ModelType]PipelineEntry
 
-func handlePipelineRequest(c *gin.Context) {
-	var request PipelineRequest
+type PredictRequest struct {
+	Image   *multipart.FileHeader `form:"image"`
+	Text    string                `form:"text"`
+	Entries PipelineRequest       `form:"entries"`
+}
 
-	// 使用 ShouldBindJSON 来解析请求体
-	if err := c.ShouldBindJSON(&request); err != nil {
+func handlePredictRequest(c *gin.Context) {
+	var req PredictRequest
+
+	if err := c.ShouldBind(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "Invalid request format",
-			"details": err.Error(),
+			"error": err.Error(),
 		})
 		return
 	}
 
-	// 处理请求...
-	// 例如：
-	for task, types := range request {
-		for modelType, entry := range types {
-			// 处理每个模型配置
-			log.Printf("Task: %s, Type: %s, Model: %s\n",
-				task, modelType, entry.ModelName)
-		}
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"status": "success",
-	})
+	c.JSON(http.StatusOK, req)
 }
 
 func main() {
@@ -67,7 +60,7 @@ func main() {
 			"message": "pong",
 		})
 	})
-	r.POST("/pipeline", handlePipelineRequest)
+	r.POST("/predict", handlePredictRequest)
 	err := r.Run(":8080")
 	if err != nil {
 		log.Panicln("Server is running on port 8080")
