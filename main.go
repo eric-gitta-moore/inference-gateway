@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 
@@ -47,8 +48,9 @@ type PipelineEntry struct {
 
 // PipelineRequest 结构体
 type PipelineRequest struct {
-	OCR  *PipelineEntry `json:"ocr,omitempty"`
-	CLIP *PipelineEntry `json:"clip,omitempty"`
+	OCR             *PipelineEntry `json:"ocr,omitempty"`
+	CLIP            *PipelineEntry `json:"clip,omitempty"`
+	FaceRecognition *PipelineEntry `json:"face-recognition,omitempty"`
 }
 
 type PredictRequest struct {
@@ -107,9 +109,18 @@ type OCRResponse struct {
 // 创建 resty 客户端
 var httpUtil = resty.New().SetDebug(true)
 
-const IMMICH_API = "http://localhost:3003"
-const MT_PHOTOS_API = "http://localhost:8060"
-const MT_PHOTOS_API_KEY = "mt_photos_ai_extra"
+func getEnvOrDefault(key, defaultValue string) string {
+	if value, exists := os.LookupEnv(key); exists {
+		return value
+	}
+	return defaultValue
+}
+
+var (
+	IMMICH_API      = getEnvOrDefault("IMMICH_API", "http://localhost:3003")
+	MT_PHOTOS_API   = getEnvOrDefault("MT_PHOTOS_API", "http://localhost:8060")
+	MT_PHOTOS_API_KEY = getEnvOrDefault("MT_PHOTOS_API_KEY", "mt_photos_ai_extra")
+)
 
 // 处理 OCR 搜索任务
 func handleOCRSearch(c *gin.Context, req PredictRequest) {
