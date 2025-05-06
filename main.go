@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"mime/multipart"
 	"net/http"
@@ -45,8 +46,8 @@ type PipelineEntry struct {
 
 // PipelineRequest 结构体
 type PipelineRequest struct {
-	OCR    *PipelineEntry `json:"ocr,omitempty"`
-	Search *PipelineEntry `json:"clip,omitempty"`
+	OCR  *PipelineEntry `json:"ocr,omitempty"`
+	CLIP *PipelineEntry `json:"clip,omitempty"`
 }
 
 type PredictRequest struct {
@@ -116,6 +117,10 @@ func convertHeaders(header http.Header) map[string]string {
 	return headers
 }
 
+const IMMICH_API = "http://localhost:3003"
+const MT_PHOTOS_API = "http://localhost:8060"
+const MT_PHOTOS_API_KEY = "mt_photos_ai_extra"
+
 // 处理 OCR 搜索任务
 func handleOCRSearch(c *gin.Context, req PredictRequest) {
 	file, err := req.Image.Open()
@@ -130,10 +135,10 @@ func handleOCRSearch(c *gin.Context, req PredictRequest) {
 	var ocrResp OCRResponse
 	// 使用 resty 发送请求
 	resp, err := httpUtil.R().
-		SetHeader("api-key", "mt_photos_ai_extra").
+		SetHeader("api-key", MT_PHOTOS_API_KEY).
 		SetFileReader("file", req.Image.Filename, file).
 		SetResult(&ocrResp).
-		Post("http://localhost:8060/ocr/rec")
+		Post(MT_PHOTOS_API + "/ocr/rec")
 
 	if err != nil || resp.StatusCode() != http.StatusOK {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -166,6 +171,71 @@ func handleOCRSearch(c *gin.Context, req PredictRequest) {
 				return boxResp
 			}),
 		},
+	})
+}
+
+type CLIPResponse struct {
+	Result []string `json:"result"`
+}
+
+func handleCLIPSearch(c *gin.Context, req PredictRequest) {
+	task := *req.Entries.CLIP
+	var resp *resty.Response
+	var err error
+	var clipResp CLIPResponse
+	reqInstance := httpUtil.R().
+		SetHeader("api-key", MT_PHOTOS_API_KEY)
+	if task.Textual != nil {
+		if req.Text == nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "文本任务需要提供文本",
+			})
+			return
+		}
+		text := *req.Text
+		resp, err = reqInstance.
+			SetBody(gin.H{
+				"text": text,
+			}).
+			SetResult(&clipResp).
+			Post(MT_PHOTOS_API + "/clip/text")
+	} else {
+		if req.Image == nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "图片任务需要提供图片",
+			})
+			return
+		}
+		file, err := req.Image.Open()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "读取图片失败：" + err.Error(),
+			})
+			return
+		}
+		defer file.Close()
+		if task.Visual != nil {
+			resp, err = reqInstance.
+				SetFileReader("file", req.Image.Filename, file).
+				SetResult(&clipResp).
+				Post(MT_PHOTOS_API + "/clip/img")
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "不支持的 CLIP 任务类型",
+			})
+			return
+		}
+	}
+
+	if err != nil || resp.StatusCode() != http.StatusOK {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "转发请求失败：" + resp.String(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"clip": fmt.Sprintf("[%v]", strings.Join(clipResp.Result, ",")),
 	})
 }
 
@@ -211,7 +281,7 @@ func handleImmichML(c *gin.Context, req PredictRequest) {
 	// 使用 resty 发送请求
 	resp, err := httpUtil.R().
 		SetMultipartFields(fields...).
-		Post("http://localhost:3003/predict")
+		Post(IMMICH_API + "/predict")
 
 	if err != nil || resp.StatusCode() != http.StatusOK {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -236,6 +306,10 @@ func handlePredictRequest(c *gin.Context) {
 
 	if req.Entries.OCR != nil {
 		handleOCRSearch(c, req)
+		return
+	}
+	if req.Entries.CLIP != nil {
+		handleCLIPSearch(c, req)
 		return
 	}
 
