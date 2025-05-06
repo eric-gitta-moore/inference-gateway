@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"mime/multipart"
 	"net/http"
@@ -187,15 +188,52 @@ func handleOCRSearch(c *gin.Context, req PredictRequest) {
 }
 
 func handleImmichML(c *gin.Context, req PredictRequest) {
-	// 使用 resty 发送请求
-	resp, err := httpUtil.R().
-		SetHeaders(convertHeaders(c.Request.Header)).
-		SetBody(c.Request.Body).
-		Post("http://localhost:3003/predict")
+	var file multipart.File
+	var err error
+	if req.Image != nil {
+		file, err = req.Image.Open()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "读取图片失败：" + err.Error(),
+			})
+			return
+		}
+		defer file.Close()
+	}
 
+	entries, err := json.Marshal(req.Entries)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "转发请求失败：" + err.Error(),
+			"error": "序列化请求失败：" + err.Error(),
+		})
+		return
+	}
+	fields := make([]*resty.MultipartField, 0)
+	if req.Image != nil {
+		fields = append(fields, &resty.MultipartField{
+			Name:     "image",
+			FileName: req.Image.Filename,
+			Reader:   file,
+		})
+	}
+	fields = append(fields, &resty.MultipartField{
+		Name:   "entries",
+		Reader: strings.NewReader(string(entries)),
+	})
+	if req.Text != nil {
+		fields = append(fields, &resty.MultipartField{
+			Name:   "text",
+			Reader: strings.NewReader(string(*req.Text)),
+		})
+	}
+	// 使用 resty 发送请求
+	resp, err := httpUtil.R().
+		SetMultipartFields(fields...).
+		Post("http://localhost:3003/predict")
+
+	if err != nil || resp.StatusCode() != http.StatusOK {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "转发请求失败：" + resp.String(),
 		})
 		return
 	}
