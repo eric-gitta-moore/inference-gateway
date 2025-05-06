@@ -76,24 +76,6 @@ func authMiddleware() gin.HandlerFunc {
 	}
 }
 
-// 处理人脸识别任务
-func handleFacialRecognition(c *gin.Context, req PredictRequest) {
-	// TODO: 实现人脸识别的具体逻辑
-	c.JSON(http.StatusOK, gin.H{
-		"task":    "facial-recognition",
-		"message": "处理人脸识别任务",
-	})
-}
-
-// 处理搜索任务
-func handleSearch(c *gin.Context, req PredictRequest) {
-	// TODO: 实现搜索的具体逻辑
-	c.JSON(http.StatusOK, gin.H{
-		"task":    "search",
-		"message": "处理搜索任务",
-	})
-}
-
 // OCR 响应相关的结构体
 type OCRBox struct {
 	X      string `json:"x"`
