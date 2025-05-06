@@ -261,9 +261,6 @@ func handlePredictRequest(c *gin.Context) {
 		return
 	}
 
-	// 重新设置请求体，确保后续处理可以使用
-	c.Request.Body = io.NopCloser(&bytes)
-
 	if req.Entries.OCR != nil {
 		handleOCRSearch(c, req)
 		return
@@ -273,6 +270,8 @@ func handlePredictRequest(c *gin.Context) {
 		return
 	}
 
+	// 重新设置请求体，确保后续处理可以使用
+	c.Request.Body = io.NopCloser(&bytes)
 	handleImmichML(c, req)
 }
 
