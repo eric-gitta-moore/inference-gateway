@@ -198,7 +198,7 @@ func handleCLIPSearch(c *gin.Context, req PredictRequest) {
 				"text": text,
 			}).
 			SetResult(&clipResp).
-			Post(MT_PHOTOS_API + "/clip/text")
+			Post(MT_PHOTOS_API + "/clip/txt")
 	} else {
 		if req.Image == nil {
 			c.JSON(http.StatusBadRequest, gin.H{
