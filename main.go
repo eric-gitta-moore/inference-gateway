@@ -117,8 +117,8 @@ func getEnvOrDefault(key, defaultValue string) string {
 }
 
 var (
-	IMMICH_API      = getEnvOrDefault("IMMICH_API", "http://localhost:3003")
-	MT_PHOTOS_API   = getEnvOrDefault("MT_PHOTOS_API", "http://localhost:8060")
+	IMMICH_API        = getEnvOrDefault("IMMICH_API", "http://localhost:3003")
+	MT_PHOTOS_API     = getEnvOrDefault("MT_PHOTOS_API", "http://localhost:8060")
 	MT_PHOTOS_API_KEY = getEnvOrDefault("MT_PHOTOS_API_KEY", "mt_photos_ai_extra")
 )
 
