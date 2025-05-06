@@ -4,9 +4,11 @@ import (
 	"log"
 	"mime/multipart"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/samber/lo"
 	"resty.dev/v3"
 )
 
@@ -28,26 +30,28 @@ const (
 	Visual      ModelType = "visual"
 )
 
-// PipelineEntry 结构体
-type PipelineEntry struct {
+type ModelParams struct {
 	ModelName string                 `json:"modelName"`
 	Options   map[string]interface{} `json:"options"`
 }
 
-type OCRSearchEntry struct {
-	Recognition PipelineEntry `json:"recognition,omitempty"`
-	Textual     PipelineEntry `json:"textual,omitempty"`
+type PipelineEntry struct {
+	Detection   *ModelParams `json:"detection,omitempty"`
+	Recognition *ModelParams `json:"recognition,omitempty"`
+	Textual     *ModelParams `json:"textual,omitempty"`
+	Visual      *ModelParams `json:"visual,omitempty"`
 }
 
-// EntryRequest 结构体
-type EntryRequest struct {
-	OCR *OCRSearchEntry `json:"ocr,omitempty"`
+// PipelineRequest 结构体
+type PipelineRequest struct {
+	OCR    *PipelineEntry `json:"ocr,omitempty"`
+	Search *PipelineEntry `json:"clip,omitempty"`
 }
 
 type PredictRequest struct {
 	Image   *multipart.FileHeader `form:"image,omitempty"`
-	Text    string                `form:"text,omitempty"`
-	Entries EntryRequest          `form:"entries"`
+	Text    *string               `form:"text,omitempty"`
+	Entries PipelineRequest       `form:"entries"`
 }
 
 const Token = "mt_photos_ai_extra"
@@ -97,6 +101,14 @@ type OCRBox struct {
 	Height string `json:"height"`
 }
 
+// OCR 响应相关的结构体
+type OCRBoxResponse struct {
+	X1 float64 `json:"x1"`
+	Y1 float64 `json:"y1"`
+	X2 float64 `json:"x2"`
+	Y2 float64 `json:"y2"`
+}
+
 type OCRResult struct {
 	Texts  []string `json:"texts"`
 	Scores []string `json:"scores"`
@@ -107,11 +119,22 @@ type OCRResponse struct {
 	Result OCRResult `json:"result"`
 }
 
+// 创建 resty 客户端
+var httpUtil = resty.New().SetDebug(true)
+
+// 将 http.Header 转换为 map[string]string
+func convertHeaders(header http.Header) map[string]string {
+	headers := make(map[string]string)
+	for key, values := range header {
+		if len(values) > 0 {
+			headers[key] = values[0]
+		}
+	}
+	return headers
+}
+
 // 处理 OCR 搜索任务
 func handleOCRSearch(c *gin.Context, req PredictRequest) {
-	// 创建 resty 客户端
-	client := resty.New()
-
 	file, err := req.Image.Open()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -121,11 +144,9 @@ func handleOCRSearch(c *gin.Context, req PredictRequest) {
 	}
 	defer file.Close()
 
-
 	var ocrResp OCRResponse
 	// 使用 resty 发送请求
-	resp, err := client.R().
-		SetDebug(true).
+	resp, err := httpUtil.R().
 		SetHeader("api-key", "mt_photos_ai_extra").
 		SetFileReader("file", req.Image.Filename, file).
 		SetResult(&ocrResp).
@@ -140,16 +161,47 @@ func handleOCRSearch(c *gin.Context, req PredictRequest) {
 
 	// 返回结构化的响应
 	c.JSON(resp.StatusCode(), gin.H{
-		"ocr":    strings.Join(ocrResp.Result.Texts, " "),
-		"result": ocrResp.Result,
+		"ocr": strings.Join(ocrResp.Result.Texts, " "),
+		"result": gin.H{
+			"texts":  ocrResp.Result.Texts,
+			"scores": ocrResp.Result.Scores,
+			"boxes": lo.Map(ocrResp.Result.Boxes, func(box OCRBox, idx int) OCRBoxResponse {
+				var boxResp OCRBoxResponse
+				var err error
+				if boxResp.X1, err = strconv.ParseFloat(box.X, 64); err != nil {
+					return boxResp
+				}
+				if boxResp.Y1, err = strconv.ParseFloat(box.Y, 64); err != nil {
+					return boxResp
+				}
+				if boxResp.X2, err = strconv.ParseFloat(box.Width, 64); err != nil {
+					return boxResp
+				}
+				if boxResp.Y2, err = strconv.ParseFloat(box.Height, 64); err != nil {
+					return boxResp
+				}
+				return boxResp
+			}),
+		},
 	})
 }
 
-func handleOtherTasks(c *gin.Context, req PredictRequest) {
-	c.JSON(http.StatusOK, gin.H{
-		"task":    "other",
-		"message": "处理其他任务",
-	})
+func handleImmichML(c *gin.Context, req PredictRequest) {
+	// 使用 resty 发送请求
+	resp, err := httpUtil.R().
+		SetHeaders(convertHeaders(c.Request.Header)).
+		SetBody(c.Request.Body).
+		Post("http://localhost:3000/api/ml/predict")
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "转发请求失败：" + err.Error(),
+		})
+		return
+	}
+
+	// 将响应状态码和响应体直接返回给客户端
+	c.Data(resp.StatusCode(), resp.Header().Get("Content-Type"), []byte(resp.String()))
 }
 
 func handlePredictRequest(c *gin.Context) {
@@ -167,7 +219,7 @@ func handlePredictRequest(c *gin.Context) {
 		return
 	}
 
-	handleOtherTasks(c, req)
+	handleImmichML(c, req)
 
 	// // 遍历请求中的任务类型
 	// for task, _ := range req.Entries {
