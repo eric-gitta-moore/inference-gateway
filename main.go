@@ -191,7 +191,7 @@ func handleImmichML(c *gin.Context, req PredictRequest) {
 	resp, err := httpUtil.R().
 		SetHeaders(convertHeaders(c.Request.Header)).
 		SetBody(c.Request.Body).
-		Post("http://localhost:3000/api/ml/predict")
+		Post("http://localhost:3003/predict")
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -242,22 +242,13 @@ func handlePredictRequest(c *gin.Context) {
 func main() {
 	r := gin.Default()
 
-	// 不需要验证的路由组
-	noAuth := r.Group("/")
-	{
-		noAuth.GET("/ping", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{
-				"message": "pong",
-			})
+	r.GET("/ping", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "pong",
 		})
-	}
+	})
 
-	// 需要验证的路由组
-	auth := r.Group("/")
-	auth.Use(authMiddleware())
-	{
-		auth.POST("/predict", handlePredictRequest)
-	}
+	r.POST("/predict", handlePredictRequest)
 
 	err := r.Run(":8080")
 	if err != nil {
