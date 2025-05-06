@@ -1,15 +1,13 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
-	"io"
 	"log"
 	"mime/multipart"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"resty.dev/v3"
 )
 
 // 定义枚举类型
@@ -111,10 +109,9 @@ type OCRResponse struct {
 
 // 处理 OCR 搜索任务
 func handleOCRSearch(c *gin.Context, req PredictRequest) {
-	// 创建转发请求
-	client := &http.Client{}
+	// 创建 resty 客户端
+	client := resty.New()
 
-	ocrReq := &bytes.Buffer{}
 	file, err := req.Image.Open()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -124,78 +121,25 @@ func handleOCRSearch(c *gin.Context, req PredictRequest) {
 	}
 	defer file.Close()
 
-	writer := multipart.NewWriter(ocrReq)
-	part, err := writer.CreateFormFile("file", req.Image.Filename)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "创建表单文件失败：" + err.Error(),
-		})
-		return
-	}
-	_, err = io.Copy(part, file)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "复制文件失败：" + err.Error(),
-		})
-		return
-	}
-	err = writer.Close()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "关闭写入器失败：" + err.Error(),
-		})
-		return
-	}
 
-	// 创建新的请求
-	forwardReq, err := http.NewRequest("POST", "http://localhost:8060/ocr/rec", ocrReq)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "创建转发请求失败：" + err.Error(),
-		})
-		return
-	}
-	// 复制原始请求的头部
-	forwardReq.Header.Set("Content-Type", writer.FormDataContentType())
-	forwardReq.Header.Set("api-key", "mt_photos_ai_extra")
-
-	// 发送请求
-	resp, err := client.Do(forwardReq)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "转发请求失败：" + err.Error(),
-		})
-		return
-	}
-	if resp.StatusCode != http.StatusOK {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "转发请求失败：" + resp.Status,
-		})
-		return
-	}
-	defer resp.Body.Close()
-
-	// 读取响应体
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "读取响应失败：" + err.Error(),
-		})
-		return
-	}
-
-	// 解析响应到结构体
 	var ocrResp OCRResponse
-	if err := json.Unmarshal(body, &ocrResp); err != nil {
+	// 使用 resty 发送请求
+	resp, err := client.R().
+		SetDebug(true).
+		SetHeader("api-key", "mt_photos_ai_extra").
+		SetFileReader("file", req.Image.Filename, file).
+		SetResult(&ocrResp).
+		Post("http://localhost:8060/ocr/rec")
+
+	if err != nil || resp.StatusCode() != http.StatusOK {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "解析响应失败：" + err.Error(),
+			"error": "转发请求失败：" + resp.String(),
 		})
 		return
 	}
-	// log.Println(ocrResp)
 
 	// 返回结构化的响应
-	c.JSON(resp.StatusCode, gin.H{
+	c.JSON(resp.StatusCode(), gin.H{
 		"ocr":    strings.Join(ocrResp.Result.Texts, " "),
 		"result": ocrResp.Result,
 	})
