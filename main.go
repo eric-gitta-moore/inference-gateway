@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"mime/multipart"
 	"net/http"
@@ -247,14 +249,20 @@ func handleImmichML(c *gin.Context, req PredictRequest) {
 }
 
 func handlePredictRequest(c *gin.Context) {
-	var req PredictRequest
+	// 先保存请求体
+	var bytes bytes.Buffer
+	c.Request.Body = io.NopCloser(io.TeeReader(c.Request.Body, &bytes))
 
+	var req PredictRequest
 	if err := c.ShouldBind(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
 		})
 		return
 	}
+
+	// 重新设置请求体，确保后续处理可以使用
+	c.Request.Body = io.NopCloser(&bytes)
 
 	if req.Entries.OCR != nil {
 		handleOCRSearch(c, req)
