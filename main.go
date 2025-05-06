@@ -1,11 +1,12 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"mime/multipart"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -105,17 +106,6 @@ type OCRResponse struct {
 
 // 创建 resty 客户端
 var httpUtil = resty.New().SetDebug(true)
-
-// 将 http.Header 转换为 map[string]string
-func convertHeaders(header http.Header) map[string]string {
-	headers := make(map[string]string)
-	for key, values := range header {
-		if len(values) > 0 {
-			headers[key] = values[0]
-		}
-	}
-	return headers
-}
 
 const IMMICH_API = "http://localhost:3003"
 const MT_PHOTOS_API = "http://localhost:8060"
@@ -240,58 +230,9 @@ func handleCLIPSearch(c *gin.Context, req PredictRequest) {
 }
 
 func handleImmichML(c *gin.Context, req PredictRequest) {
-	var file multipart.File
-	var err error
-	if req.Image != nil {
-		file, err = req.Image.Open()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "读取图片失败：" + err.Error(),
-			})
-			return
-		}
-		defer file.Close()
-	}
-
-	entries, err := json.Marshal(req.Entries)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "序列化请求失败：" + err.Error(),
-		})
-		return
-	}
-	fields := make([]*resty.MultipartField, 0)
-	if req.Image != nil {
-		fields = append(fields, &resty.MultipartField{
-			Name:     "image",
-			FileName: req.Image.Filename,
-			Reader:   file,
-		})
-	}
-	fields = append(fields, &resty.MultipartField{
-		Name:   "entries",
-		Reader: strings.NewReader(string(entries)),
-	})
-	if req.Text != nil {
-		fields = append(fields, &resty.MultipartField{
-			Name:   "text",
-			Reader: strings.NewReader(string(*req.Text)),
-		})
-	}
-	// 使用 resty 发送请求
-	resp, err := httpUtil.R().
-		SetMultipartFields(fields...).
-		Post(IMMICH_API + "/predict")
-
-	if err != nil || resp.StatusCode() != http.StatusOK {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "转发请求失败：" + resp.String(),
-		})
-		return
-	}
-
-	// 将响应状态码和响应体直接返回给客户端
-	c.Data(resp.StatusCode(), resp.Header().Get("Content-Type"), []byte(resp.String()))
+	target, _ := url.Parse(IMMICH_API)
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	proxy.ServeHTTP(c.Writer, c.Request)
 }
 
 func handlePredictRequest(c *gin.Context) {
@@ -314,23 +255,6 @@ func handlePredictRequest(c *gin.Context) {
 	}
 
 	handleImmichML(c, req)
-
-	// // 遍历请求中的任务类型
-	// for task, _ := range req.Entries {
-	// 	switch task {
-	// 	case FacialRecognition:
-	// 		handleFacialRecognition(c, req)
-	// 	case Search:
-	// 		handleSearch(c, req)
-	// 	case OCRSearch:
-	// 		handleOCRSearch(c, req)
-	// 	default:
-	// 		c.JSON(http.StatusBadRequest, gin.H{
-	// 			"error": "不支持的任务类型",
-	// 		})
-	// 		return
-	// 	}
-	// }
 }
 
 func main() {
