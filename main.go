@@ -122,6 +122,7 @@ var (
 	IMMICH_API        = getEnvOrDefault("IMMICH_API", "http://localhost:3003")
 	MT_PHOTOS_API     = getEnvOrDefault("MT_PHOTOS_API", "http://localhost:8060")
 	MT_PHOTOS_API_KEY = getEnvOrDefault("MT_PHOTOS_API_KEY", "mt_photos_ai_extra")
+	PORT              = getEnvOrDefault("PORT", "8080")
 )
 
 // 处理 OCR 搜索任务
@@ -203,6 +204,12 @@ func handleCLIPSearch(c *gin.Context, req PredictRequest) {
 			SetResult(&clipResp).
 			Post(MT_PHOTOS_API + "/clip/txt")
 	} else {
+		if task.Visual == nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "不支持的 CLIP 任务类型",
+			})
+			return
+		}
 		if req.Image == nil {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "图片任务需要提供图片",
@@ -217,17 +224,10 @@ func handleCLIPSearch(c *gin.Context, req PredictRequest) {
 			return
 		}
 		defer file.Close()
-		if task.Visual != nil {
-			resp, err = reqInstance.
-				SetFileReader("file", req.Image.Filename, file).
-				SetResult(&clipResp).
-				Post(MT_PHOTOS_API + "/clip/img")
-		} else {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "不支持的 CLIP 任务类型",
-			})
-			return
-		}
+		resp, err = reqInstance.
+			SetFileReader("file", req.Image.Filename, file).
+			SetResult(&clipResp).
+			Post(MT_PHOTOS_API + "/clip/img")
 	}
 
 	if err != nil || resp.StatusCode() != http.StatusOK {
@@ -286,8 +286,10 @@ func main() {
 
 	r.POST("/predict", handlePredictRequest)
 
-	err := r.Run(":8080")
+	// 在启动服务器前打印日志
+	log.Printf("Server is starting on port %s", PORT)
+	err := r.Run(":" + PORT)
 	if err != nil {
-		log.Panicln("Server is running on port 8080")
+		log.Panicln("Server failed to start:", err)
 	}
 }
