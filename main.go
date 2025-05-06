@@ -108,9 +108,6 @@ type OCRResponse struct {
 	Result OCRResult `json:"result"`
 }
 
-// 创建 resty 客户端
-var httpUtil = resty.New().SetDebug(true)
-
 func getEnvOrDefault(key, defaultValue string) string {
 	if value, exists := os.LookupEnv(key); exists {
 		return value
@@ -123,7 +120,11 @@ var (
 	MT_PHOTOS_API     = getEnvOrDefault("MT_PHOTOS_API", "http://localhost:8060")
 	MT_PHOTOS_API_KEY = getEnvOrDefault("MT_PHOTOS_API_KEY", "mt_photos_ai_extra")
 	PORT              = getEnvOrDefault("PORT", "8080")
+	GIN_MODE          = getEnvOrDefault("GIN_MODE", "debug")
 )
+
+// 创建 resty 客户端
+var httpUtil = resty.New().SetDebug(GIN_MODE == "debug")
 
 // 处理 OCR 搜索任务
 func handleOCRSearch(c *gin.Context, req PredictRequest) {
