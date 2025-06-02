@@ -143,7 +143,7 @@ func handleOCRSearch(c *gin.Context, req PredictRequest) {
 		SetHeader("api-key", MT_PHOTOS_API_KEY).
 		SetFileReader("file", req.Image.Filename, file).
 		SetResult(&ocrResp).
-		Post(MT_PHOTOS_API + "/ocr/rec")
+		Post(MT_PHOTOS_API + "/ocr")
 
 	if err != nil || resp.StatusCode() != http.StatusOK {
 		c.JSON(http.StatusInternalServerError, gin.H{
