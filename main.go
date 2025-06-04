@@ -91,7 +91,7 @@ type OCRBox struct {
 }
 
 // OCR 响应相关的结构体
-type OCRBoxResponse struct {
+type BoundingBox struct {
 	X1 float64 `json:"x1"`
 	Y1 float64 `json:"y1"`
 	X2 float64 `json:"x2"`
@@ -158,8 +158,8 @@ func handleOCRSearch(c *gin.Context, req PredictRequest) {
 		"result": gin.H{
 			"texts":  ocrResp.Result.Texts,
 			"scores": ocrResp.Result.Scores,
-			"boxes": lo.Map(ocrResp.Result.Boxes, func(box OCRBox, idx int) OCRBoxResponse {
-				var boxResp OCRBoxResponse
+			"boxes": lo.Map(ocrResp.Result.Boxes, func(box OCRBox, idx int) BoundingBox {
+				var boxResp BoundingBox
 				var err error
 				if boxResp.X1, err = strconv.ParseFloat(box.X, 64); err != nil {
 					return boxResp
@@ -243,6 +243,79 @@ func handleCLIPSearch(c *gin.Context, req PredictRequest) {
 	})
 }
 
+type FaceResponse struct {
+	DetectorBackend  string        `json:"detector_backend"`
+	RecognitionModel string        `json:"recognition_model"`
+	Result           []*FaceResult `json:"result"`
+}
+
+type FaceResult struct {
+	Embedding  []float64 `json:"embedding"`
+	FacialArea struct {
+		X float64 `json:"x"`
+		Y float64 `json:"y"`
+		W float64 `json:"w"`
+		H float64 `json:"h"`
+	} `json:"facial_area"`
+	FaceConfidence float64 `json:"face_confidence"`
+}
+
+type Face struct {
+	BoundingBox BoundingBox `json:"boundingBox"`
+	Embedding   string      `json:"embedding"`
+	Score       float64     `json:"score"`
+}
+
+func handleFaceModel(c *gin.Context, req PredictRequest) {
+	task := *req.Entries.FaceRecognition
+	if task.Detection != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "不支持的 Face 任务类型",
+		})
+		return
+	}
+
+	file, err := req.Image.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "读取图片失败：" + err.Error(),
+		})
+		return
+	}
+	defer file.Close()
+
+	var faceResp FaceResponse
+	resp, err := httpUtil.R().
+		SetHeader("api-key", MT_PHOTOS_API_KEY).
+		SetFileReader("file", req.Image.Filename, file).
+		SetResult(&faceResp).
+		Post(MT_PHOTOS_API + "/represent")
+
+	if err != nil || resp.StatusCode() != http.StatusOK {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "转发请求失败：" + resp.String(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		string(FacialRecognition): lo.Map(faceResp.Result, func(face *FaceResult, idx int) Face {
+			return Face{
+				BoundingBox: BoundingBox{
+					X1: face.FacialArea.X,
+					Y1: face.FacialArea.Y,
+					X2: face.FacialArea.X + face.FacialArea.W,
+					Y2: face.FacialArea.Y + face.FacialArea.H,
+				},
+				Embedding: strings.Join(lo.Map(face.Embedding, func(embedding float64, idx int) string {
+					return fmt.Sprintf("%v", embedding)
+				}), ","),
+				Score: face.FaceConfidence,
+			}
+		}),
+	})
+}
+
 func handleImmichML(c *gin.Context, req PredictRequest) {
 	target, _ := url.Parse(IMMICH_API)
 	proxy := httputil.NewSingleHostReverseProxy(target)
@@ -268,6 +341,10 @@ func handlePredictRequest(c *gin.Context) {
 	}
 	if req.Entries.CLIP != nil {
 		handleCLIPSearch(c, req)
+		return
+	}
+	if req.Entries.FaceRecognition != nil {
+		handleFaceModel(c, req)
 		return
 	}
 
