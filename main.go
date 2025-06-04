@@ -52,7 +52,7 @@ type PipelineEntry struct {
 type PipelineRequest struct {
 	OCR             *PipelineEntry `json:"ocr,omitempty"`
 	CLIP            *PipelineEntry `json:"clip,omitempty"`
-	FaceRecognition *PipelineEntry `json:"face-recognition,omitempty"`
+	FacialRecognition *PipelineEntry `json:"facial-recognition,omitempty"`
 }
 
 type PredictRequest struct {
@@ -267,8 +267,8 @@ type Face struct {
 }
 
 func handleFaceModel(c *gin.Context, req PredictRequest) {
-	task := *req.Entries.FaceRecognition
-	if task.Detection != nil {
+	task := *req.Entries.FacialRecognition
+	if task.Detection == nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "不支持的 Face 任务类型",
 		})
@@ -343,14 +343,14 @@ func handlePredictRequest(c *gin.Context) {
 		handleCLIPSearch(c, req)
 		return
 	}
-	if req.Entries.FaceRecognition != nil {
+	if req.Entries.FacialRecognition != nil {
 		handleFaceModel(c, req)
 		return
 	}
 
-	// 重新设置请求体，确保后续处理可以使用
-	c.Request.Body = io.NopCloser(&bytes)
-	handleImmichML(c, req)
+	c.JSON(http.StatusBadRequest, gin.H{
+		"error": "不支持的任务类型",
+	})
 }
 
 func main() {
