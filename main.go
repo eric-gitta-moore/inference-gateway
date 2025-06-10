@@ -307,9 +307,9 @@ func handleFaceModel(c *gin.Context, req PredictRequest) {
 					X2: face.FacialArea.X + face.FacialArea.W,
 					Y2: face.FacialArea.Y + face.FacialArea.H,
 				},
-				Embedding: strings.Join(lo.Map(face.Embedding, func(embedding float64, idx int) string {
+				Embedding: fmt.Sprintf("[%v]", strings.Join(lo.Map(face.Embedding, func(embedding float64, idx int) string {
 					return fmt.Sprintf("%v", embedding)
-				}), ","),
+				}), ",")),
 				Score: face.FaceConfidence,
 			}
 		}),
